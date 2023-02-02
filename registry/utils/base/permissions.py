@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
-from .models import User
+from authentication.models import User
+
 
 class IsAuthenticatedAdmin(BasePermission):
     def has_permission(self, request, view):

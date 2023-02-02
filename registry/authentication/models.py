@@ -1,81 +1,66 @@
-from django.forms import ValidationError
-from django.conf import settings
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
-from django.core.mail import send_mail
-from django.db import models
-from django.db.models.signals import pre_save, post_save
-from django.dispatch import receiver
+from typing import TypeVar
 
-from .utils import get_usable_name, validate_phone, regex_phone
-from .validators import validate_special_char
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from utils.base.validators import validate_phone, validate_special_char
+from utils.base.general import send_email
+
+import random
+
+T = TypeVar('T', bound=AbstractBaseUser)
 
 
 class UserManager(BaseUserManager):
-    def create_user(self, email=None, first_name=None, last_name=None, password=None, is_active=False, is_staff=False,
-                    is_admin=False, *args, **kwargs):
+    def create_base_user(
+        self, email, is_active=True,
+        is_staff=False, is_admin=False
+    ) -> T:
         if not email:
-            raise ValueError("Email is required")
-        if not first_name:
-            raise ValueError("First name is required")
-        if not last_name:
-            raise ValueError("Last name is required")
-        if not password:
-            raise ValueError("Strong password is required")
+            raise ValueError("User must provide an email")
 
-        user = self.model(
-            email = self.normalize_email(email),
-            first_name=first_name,
-            last_name=last_name
+        user: User = self.model(
+            email=self.normalize_email(email)
         )
-        user.set_password(password)
         user.active = is_active
         user.admin = is_admin
         user.staff = is_staff
+        user.set_unusable_password()
         user.save(using=self._db)
-
         return user
 
-    def create_staff(self, email, first_name=None, last_name=None, password=None):
-        user = self.create_user(email=email, first_name=first_name, last_name=last_name, password=password, is_staff=True)
+    def create_user(
+        self, email, password=None, is_active=True,
+        is_staff=False, is_admin=False
+    ) -> T:
+        user = self.create_base_user(email, is_active, is_staff, is_admin)
+        if not password:
+            raise ValueError("User must provide a password")
+        user.set_password(password)
+        user.save()
         return user
 
-    def create_superuser(self, email, first_name=None, last_name=None, password=None):
-        user = self.create_user(email=email, first_name=first_name, last_name=last_name, password=password, is_staff=True,
-                                is_admin=True, is_active=True)
+    def create_staff(self, email, password=None) -> T:
+        user = self.create_user(email=email, password=password, is_staff=True)
         return user
 
-    def get_staffs(self):
-        return self.filter(staff=True)
+    def create_superuser(self, email, password=None) -> T:
+        user = self.create_user(
+            email=email, password=password, is_staff=True, is_admin=True)
+        return user
 
-    def get_admins(self):
-        return self.filter(admin=True)
-
-
-RELATIONSHIP_STATUS = [
-    ('single', 'Single',),
-    ('dating', 'Dating',),
-    ('married', 'Married',),
-]
 
 class User(AbstractBaseUser):
-    
-    first_name = models.CharField(max_length=15, validators=[validate_special_char])
-    last_name = models.CharField(max_length=15, validators=[validate_special_char])
     email = models.EmailField(max_length=255, unique=True)
+    verified_email = models.BooleanField(default=False)
 
     active = models.BooleanField(default=False)
     staff = models.BooleanField(default=False)
     admin = models.BooleanField(default=False)
     start_date = models.DateTimeField(auto_now=True)
-    status = models.CharField(choices=RELATIONSHIP_STATUS, max_length=20, default='single')
 
-    # Confirmation fields
-    confirmed_phoneno = models.BooleanField(default=False)
-    confirmed_id = models.BooleanField(default=False)
-    confirmed_address = models.BooleanField(default=False)
-    confirmed_email = models.BooleanField(default=False)
-
-    REQUIRED_FIELDS = ["first_name","last_name"]
+    REQUIRED_FIELDS = ["first_name", "last_name"]
     USERNAME_FIELD = "email"
 
     objects = UserManager()
@@ -86,10 +71,17 @@ class User(AbstractBaseUser):
     def has_module_perms(self, app_label):
         return True
 
-    def email_user(self, subject, message, fail=True):
-        print(message)
-        val = send_mail(subject=subject, message=message, from_email=settings.DEFAULT_FROM_EMAIL, recipient_list=[self.email], fail_silently=fail)
+    def mail(self, subject, message, fail=True):
+        val = send_email(
+            email=self.email, subject=subject, message=message, fail=fail
+        )
         return True if val else False
+
+    def verify_otp(self, otp: int):
+        """
+        Validate the otp
+        """
+        return self.otp == otp
 
     @property
     def is_active(self):
@@ -102,11 +94,7 @@ class User(AbstractBaseUser):
     @property
     def is_admin(self):
         return self.admin
-    
-    @property
-    def fullname(self):
-        return f'{self.first_name.capitalize()} {self.last_name.capitalize()}'
-    
+
     def __str__(self):
         return self.fullname
 
@@ -114,48 +102,111 @@ class User(AbstractBaseUser):
         verbose_name = 'User'
 
 
-class Phone(models.Model):
-    phoneno = models.CharField(max_length=16,
-        validators=[regex_phone],
-        help_text='Enter a correct phone number',
-        null=True,
-        blank=True,
-        unique=True,
+class Profile(models.Model):
+    SEX = (
+        ('M', 'Male'),
+        ('F', 'Female'),
     )
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
 
-    # Override save method to validate phone field
-    def save(self, *args, **kwargs):
-        if self.phoneno:
-            # First check if this password has been used by anyone
-            exists = self.__class__.objects.filter(phoneno=self.phoneno).exclude(pk=self.pk).exists()
-            if exists:
-                raise ValidationError('This phone number has been used')
-            
-            # Validate your phone number
-            phoneno = str(self.phoneno).replace(' ','')
-            if not validate_phone(phoneno):
-                raise ValidationError('Invalid phone number provided', code='invalid_phone')
+    fullname = models.CharField(
+        max_length=50, validators=[validate_special_char])
+    sex = models.CharField(
+        choices=SEX, max_length=1, blank=True)
+    country = models.CharField(max_length=60, blank=True)
 
-        super().save(*args, **kwargs)
-    
+    def __str__(self) -> str:
+        return self.fullname
+
+
+class Phone(models.Model):
+    phoneno = models.CharField(
+        max_length=16,
+        validators=[validate_phone],
+        help_text='Enter a correct phone number',
+    )
+    verified = models.BooleanField(default=False)
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE)
 
     def __str__(self) -> str:
         return self.phoneno
 
 
+class PendingRelationship(models.Model):
+    creator = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name='creator')
+    name = models.CharField(max_length=50, validators=[validate_special_char])
+    country = models.CharField(max_length=60, blank=True)
+
+    def connect(self, profile: Profile):
+        partner = Partner.objects.create(
+            profile=profile,
+            pending_relationship=self,
+            partner=self.creator.partner
+        )
+        return partner
+
+    def connect_without_profile(self):
+        return self.connect(None)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PendingRelationshipPhone(models.Model):
+    phoneno = models.CharField(
+        max_length=16,
+        validators=[validate_phone],
+        help_text='Enter a correct phone number',
+    )
+    verified = models.BooleanField(default=False)
+    pending_relationship = models.ForeignKey(
+        PendingRelationship, on_delete=models.CASCADE)
+
+    def __str__(self) -> str:
+        return self.phoneno
+
+
+class Partner(models.Model):
+    profile = models.OneToOneField(
+        Profile, on_delete=models.CASCADE, null=True)
+    pending_relationship = models.ForeignKey(
+        PendingRelationship, on_delete=models.CASCADE, null=True)
+    partner = models.ForeignKey("self", on_delete=models.CASCADE, null=True)
+
+    def get_name(self):
+        if self.profile:
+            return self.profile.fullname
+        if self.pending_relationship:
+            return self.pending_relationship.name
+        raise ValueError('Partner must have a profile or pending relationship')
+
+    def __str__(self) -> str:
+        return self.get_name()
+
+
 class Relationship(models.Model):
-    creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='First_Partner')
-    other = models.ForeignKey(User, on_delete=models.CASCADE, related_name='Second_Partner')
-    phone_numbers = models.CharField(max_length=300)
+    RELATIONSHIP_STATUS = [
+        ('dating', 'Dating',),
+        ('married', 'Married',),
+    ]
+
+    partners = models.ManyToManyField(
+        Partner, validators=[lambda x: x.count() == 2])
+    status = models.CharField(
+        choices=RELATIONSHIP_STATUS, max_length=10, default='dating')
     verified = models.BooleanField(default=False)
 
     def __str__(self) -> str:
-        return f"{self.user1.fullname} == {self.user2.fullname}"
+        first: Partner = self.partners.first()
+        if first == self.partners.last():
+            return f'{first.get_name()} & Not Verified'
+        return f'{first.get_name()} & \
+{self.partners.last().get_name()}'
 
-# @receiver(post_save, sender=User)
-# def create_profile(sender, instance, created, **kwargs):
-#     if created:
-#         username = get_usable_name(instance, Profile)
-#         Profile.objects.create(user=instance)
+
+@receiver(post_save, sender=User)
+def create_profile(sender, instance, created, **kwargs):
+    if created:
+        Profile.objects.create(user=instance)
