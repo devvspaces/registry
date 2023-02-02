@@ -1,13 +1,9 @@
 
-from authentication.models import Phone, User
-from authentication.tokens import account_confirm_token
-from django.utils.encoding import force_str
-from django.utils.http import urlsafe_base64_decode
+from authentication.models import User
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
-from rest_framework.exceptions import NotFound
-from rest_framework.generics import (CreateAPIView, ListAPIView,
-                                     RetrieveUpdateAPIView, UpdateAPIView)
+from rest_framework.generics import (CreateAPIView, RetrieveUpdateAPIView,
+                                     UpdateAPIView)
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
