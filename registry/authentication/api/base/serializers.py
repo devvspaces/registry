@@ -41,10 +41,6 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('password', 'email', 'fullname', 'country')
-        extra_kwargs = {
-            'first_name': {'required': True},
-            'last_name': {'required': True},
-        }
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
@@ -104,20 +100,21 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    profile = ProfileSerializer()
+    profile = ProfileSerializer(read_only=True)
 
     class Meta:
         model = User
-        fields = [
+        fields = (
             'email',
             'verified_email',
             'active',
-        ]
-        read_only_fields = [
+            'profile'
+        )
+        read_only_fields = (
             'email',
             'verified_email',
             'active',
-        ]
+        )
 
 
 class TokenSerializer(serializers.Serializer):

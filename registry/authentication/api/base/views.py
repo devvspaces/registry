@@ -2,7 +2,7 @@
 from authentication.models import User
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
-from rest_framework.generics import (CreateAPIView, RetrieveUpdateAPIView,
+from rest_framework.generics import (CreateAPIView, RetrieveAPIView,
                                      UpdateAPIView)
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -192,7 +192,7 @@ class UpdatePasswordView(APIView):
     serializer_class = serializers.ForgetChangePasswordSerializer
 
     @swagger_auto_schema(
-        request_body=serializers.ForgetChangePasswordSerializerSwagger,
+        request_body=serializers.ForgetChangePasswordSerializer,
     )
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
@@ -212,16 +212,11 @@ class ChangePasswordView(UpdateAPIView):
         return User.objects.filter(active=True)
 
 
-class UserAPIView(RetrieveUpdateAPIView):
-    permission_classes = (AllowAny,)
+class UserRetrieveView(RetrieveAPIView):
     serializer_class = serializers.UserSerializer
 
     def get_queryset(self):
-        return User.objects.all()
+        return User.objects.filter
 
-    def get(self, request, *args, **kwargs):
-        user = self.get_object()
-        if user is not None:
-            serializer = self.get_serializer(instance=user)
-            return Response(serializer.data)
-        return Response(status=status.HTTP_404_NOT_FOUND)
+    def get_object(self):
+        return self.request.user

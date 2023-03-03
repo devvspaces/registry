@@ -1,13 +1,20 @@
-from rest_framework.permissions import BasePermission
-
 from authentication.models import User
+from rest_framework.permissions import IsAuthenticated as IsAuthenticatedBase
+from rest_framework_simplejwt.models import TokenUser
 
 
-class IsAuthenticatedAdmin(BasePermission):
+def set_user(request):
+    # Check if the user is a Token user and set user to request
+    if isinstance(request.user, TokenUser):
+        try:
+            # Get the user object from the database and must be active
+            user = User.objects.get(id=request.user.id, active=True)
+            request.user = user
+        except User.DoesNotExist:
+            raise Exception('Not a authenticated')
+
+
+class IsAuthenticated(IsAuthenticatedBase):
     def has_permission(self, request, view):
-        # Get the user, if the user is staff or admin (open access)
-        if request.user.is_authenticated:
-            user = User.objects.get(pk=request.user.pk)
-            if user.staff or user.admin:
-                return True
-        return False
+        set_user(request)
+        return super().has_permission(request, view)

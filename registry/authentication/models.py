@@ -4,10 +4,8 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from utils.base.validators import validate_phone, validate_special_char
 from utils.base.general import send_email
-
-import random
+from utils.base.validators import validate_phone, validate_special_char
 
 T = TypeVar('T', bound=AbstractBaseUser)
 
@@ -60,7 +58,7 @@ class User(AbstractBaseUser):
     admin = models.BooleanField(default=False)
     start_date = models.DateTimeField(auto_now=True)
 
-    REQUIRED_FIELDS = ["first_name", "last_name"]
+    REQUIRED_FIELDS = []
     USERNAME_FIELD = "email"
 
     objects = UserManager()
@@ -173,7 +171,9 @@ class Partner(models.Model):
         Profile, on_delete=models.CASCADE, null=True)
     pending_relationship = models.ForeignKey(
         PendingRelationship, on_delete=models.CASCADE, null=True)
-    partner = models.ForeignKey("self", on_delete=models.CASCADE, null=True)
+    partner = models.ForeignKey(
+        "self", on_delete=models.CASCADE,
+        null=True, related_name='other_partner')
 
     def get_name(self):
         if self.profile:
@@ -192,8 +192,7 @@ class Relationship(models.Model):
         ('married', 'Married',),
     ]
 
-    partners = models.ManyToManyField(
-        Partner, validators=[lambda x: x.count() == 2])
+    partners = models.ManyToManyField(Partner)
     status = models.CharField(
         choices=RELATIONSHIP_STATUS, max_length=10, default='dating')
     verified = models.BooleanField(default=False)

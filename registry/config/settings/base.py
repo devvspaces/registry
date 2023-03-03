@@ -6,6 +6,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config('SECRET_KEY')
 
+ENCRYPTING_KEY = config('ENCRYPTING_KEY')
+
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 
@@ -24,16 +26,12 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
+        'utils.base.permissions.IsAuthenticated',
     ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTTokenUserAuthentication',
     ),
     'DEFAULT_PAGINATION_CLASS': 'utils.base.pagination.CustomPagination',
-}
-
-SWAGGER_SETTINGS = {
-   'DEFAULT_AUTO_SCHEMA_CLASS': 'utils.base.schema.BaseSchema',
 }
 
 MIDDLEWARE = [
@@ -170,7 +168,3 @@ SIMPLE_JWT = {
 
 OFF_EMAIL = True
 
-
-ENCRYPTING_KEY = config('ENCRYPTING_KEY')
-
-OTP_EXPIRY = 300
